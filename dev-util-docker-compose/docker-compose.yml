@@ -1,0 +1,47 @@
+# HackMD
+
+hackmdPostgres:
+  image: postgres
+  environment:
+    - POSTGRES_USER=hackmd
+    - POSTGRES_PASSWORD=hackmdpass
+    - POSTGRES_DB=hackmd
+hackmd:
+  image: hackmdio/hackmd:latest
+  environment:
+    - POSTGRES_USER=hackmd
+    - POSTGRES_PASSWORD=hackmdpass
+  links:
+    - hackmdPostgres:hackmdPostgres
+  ports:
+    - "3333:3000"
+
+# Wekan
+  
+wekandb:
+  image: mongo:3.2.13
+  container_name: wekan-db
+  command: mongod --smallfiles --oplogSize 128
+  expose:
+    - 27017
+  volumes:
+    - wekan-db:/data/db
+    - wekan-db-dump:/dump
+
+wekan:
+  image: wekanteam/wekan:latest
+  container_name: wekan-app
+  ports:
+    - 8082:80
+  environment:
+    - MONGO_URL=mongodb://wekandb:27017/wekan
+    - ROOT_URL=http://localhost:8082
+  links:
+    - wekandb:wekandb
+
+# Adminer
+
+adminer:
+  image: tenten0213/adminer
+  ports:
+    - 8888:80

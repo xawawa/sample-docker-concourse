@@ -1,0 +1,183 @@
+resource_types:
+  - name: s3-upload
+    type: docker-image
+    source:
+      repository: making/s3-resource-simple
+
+resources:
+  - name: pipeline-repo
+    type: git
+    source:
+      uri: 
+      branch: master
+      username: hoge
+      password: hoge
+  - name: test-target-repo
+    type: git
+    source:
+      uri: 
+      branch: master
+      username: hoge
+      password: hoge
+  - name: otdps-cc-api-repo
+    type: git
+    source:
+      uri: 
+      branch: master
+      username: hoge
+      password: hoge
+  - name: test-common-repo
+    type: git
+    source:
+      uri: 
+      branch: master
+      username: hoge
+      password: hoge
+  - name: db-operation-repo
+    type: git
+    source:
+      uri: 
+      branch: master
+      username: hoge
+      password: hoge
+  - name: m2
+    type: docker-image
+    source:
+      repository: localhost:5000/xawawa/m2
+      tag: "latest"
+      insecure_registries: [ "localhost:5000" ]
+  - name: minio-bucket
+    type: s3-upload
+    source:
+      bucket: acceptance-test 
+      disable_ssl: true
+      endpoint: 
+      access_key_id: minio
+      secret_access_key: minio123
+      use_v4: true
+      options:
+        - '--exclude "*"'
+        - '--include "report/*"'
+
+jobs:
+  - name: m2-install-set-repo
+    public: true
+    plan:
+      - get: pipeline-repo
+      - get: test-common-repo
+        trigger: true
+      - get: m2
+      - task: m2-install-set-repo
+        file: pipeline-repo/tasks/m2-install-set-repo.yml
+      - put: m2
+        params:
+          import_file: to-push/rootfs.tar
+
+  - name: green-flow-db-setup
+    public: true
+    plan:
+      - get: pipeline-repo
+      - get: db-operation-repo
+      - get: m2
+        passed: [m2-install-set-repo]
+      - task: green-flow-db-setup
+        file: pipeline-repo/tasks/green-flow-db-setup.yml
+
+  - name: green-flow
+    public: true
+    plan:
+      - get: db-operation-repo
+      - get: pipeline-repo
+      - get: test-target-repo
+        trigger: true
+      - get: m2
+        passed: [green-flow-db-setup]
+      - task: green-flow-acceptance-test
+        file: pipeline-repo/tasks/test-green-flow.yml
+      - put: minio-bucket
+
+  - name: yellow-flow-db-setup
+    public: true
+    plan:
+      - get: pipeline-repo
+      - get: db-operation-repo
+      - get: m2
+        passed: [m2-install-set-repo]
+      - task: yellow-flow-db-setup
+        file: pipeline-repo/tasks/yellow-flow-db-setup.yml
+
+  - name: yellow-flow-1
+    public: true
+    plan:
+      - get: db-operation-repo
+      - get: pipeline-repo
+      - get: test-target-repo
+      - get: m2
+        passed: [yellow-flow-db-setup]
+      - task: yellow-flow-1st-acceptance-test
+        file: pipeline-repo/tasks/test-yellow-flow-1.yml
+      - put: minio-bucket
+      - put: m2
+        params:
+          import_file: to-push/rootfs.tar
+
+  - name: yellow-flow-2
+    public: true
+    plan:
+      - get: pipeline-repo
+      - get: test-target-repo
+      - get: m2
+        passed: [yellow-flow-1]
+      - task: yellow-flow-2nd-acceptance-test
+        file: pipeline-repo/tasks/test-yellow-flow-2.yml
+      - put: minio-bucket
+
+  - name: otdps-cc-api-db-setup
+    public: true
+    plan:
+      - get: pipeline-repo
+      - get: db-operation-repo
+      - get: m2
+        passed: [m2-install-set-repo]
+      - task: otdps-cc-api-db-setup
+        file: pipeline-repo/tasks/otdps-cc-api-db-setup.yml
+
+  - name: otdps-cc-api
+    public: true
+    plan:
+      - get: db-operation-repo
+      - get: pipeline-repo
+      - get: otdps-cc-api-repo
+        trigger: true
+      - get: m2
+        passed: [otdps-cc-api-db-setup]
+      - task: otdps-cc-api-acceptance-test
+        file: pipeline-repo/tasks/test-otdps-cc-api.yml
+      - put: minio-bucket
+
+  - name: init-m2
+    plan:
+      - get: pipeline-repo
+      - get: test-target-repo
+      - task: build-m2
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: maven
+              tag: "3.5.0-jdk-8-alpine"
+          inputs:
+            - name: pipeline-repo
+            - name: test-target-repo
+          outputs:
+            - name: to-push
+          run:
+            path: sh
+            args:
+            - pipeline-repo/tasks/init-m2.sh
+            - init
+      - put: m2
+        params:
+          import_file: to-push/rootfs.tar
+

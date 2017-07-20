@@ -1,0 +1,78 @@
+concourse-db:
+  image: postgres:9.5
+  environment:
+    POSTGRES_DB: concourse
+    POSTGRES_USER: concourse
+    POSTGRES_PASSWORD: changeme
+    PGDATA: /database
+    TZ: Asia/Tokyo
+
+
+concourse-web:
+  image: concourse/concourse
+  links: [concourse-db]
+  command: web
+  ports: ["9000:8080"]
+  volumes: ["./keys/web:/concourse-keys"]
+  dns:
+    - 8.8.8.8
+    - 8.8.4.4
+  environment:
+    CONCOURSE_BASIC_AUTH_USERNAME: user
+    CONCOURSE_BASIC_AUTH_PASSWORD: password
+    CONCOURSE_EXTERNAL_URL: http://127.0.0.1:9000
+    CONCOURSE_POSTGRES_DATA_SOURCE: |- 
+      postgres://concourse:changeme@concourse-db:5432/concourse?sslmode=disable
+    http_proxy: http://proxy:8080
+    no_proxy: localhost
+    TZ: Asia/Tokyo
+
+concourse-worker:
+  image: concourse/concourse
+  privileged: true
+  links: [concourse-web]
+  command: worker
+  volumes: ["./keys/worker:/concourse-keys"]
+  dns:
+    - 8.8.8.8
+    - 8.8.4.4
+  environment:
+    CONCOURSE_TSA_HOST: concourse-web
+    http_proxy: http://proxy:8080
+    no_proxy: localhost
+    TZ: Asia/Tokyo
+
+httpd:
+  build: ./httpd
+  ports:
+    - "8080:80"
+  volumes: ["/opt/report/:/usr/local/apache2/htdocs/"]
+  environment:
+    TZ: Asia/Tokyo
+
+minio:
+  image: minio/minio:RELEASE.2017-05-05T01-14-51Z
+  ports:
+    - "9001:9000"
+  volumes:
+    - /opt/report:/export
+  command: server /export
+  environment:
+    MINIO_ACCESS_KEY: minio
+    MINIO_SECRET_KEY: minio123
+    TZ: Asia/Tokyo
+
+mock-data:
+  image: busybox
+  volumes:
+      - /opt/mock-db-data:/var/lib/postgresql/data
+
+mock-db:
+  image: postgres:9.5
+  environment:
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres
+  ports:
+    - "5433:5432"
+  volumes_from:
+      - mock-data
